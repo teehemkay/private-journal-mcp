@@ -2,9 +2,9 @@
   "name": "private-journal-mcp",
   "version": "1.0.0",
   "description": "A lightweight MCP server that provides Claude with a private journaling capability to process feelings and thoughts",
-  "main": "dist/index.js",
+  "module": "src/index.ts",
   "bin": {
-    "private-journal-mcp": "./dist/index.js"
+    "private-journal": "src/index.ts"
   },
   "scripts": {
     "prepare": "npm run build",
@@ -44,5 +44,8 @@
     "dist/**/*",
     "README.md",
     "LICENSE"
+  ],
+  "trustedDependencies": [
+    "protobufjs"
   ]
 }
