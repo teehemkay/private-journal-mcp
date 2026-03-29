@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 // ABOUTME: Main entry point for the private journal MCP server
 // ABOUTME: Handles command line arguments and starts the server
