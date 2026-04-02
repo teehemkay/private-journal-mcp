@@ -1,7 +1,9 @@
 // ABOUTME: Unit tests for git remote detection and URL parsing
 // ABOUTME: Tests URL normalization across SSH, HTTPS, and edge cases
 
-import { parseGitRemoteUrl } from '../src/git';
+import { parseGitRemoteUrl, detectGitRemote } from '../src/git';
+import * as path from 'path';
+import * as os from 'os';
 
 describe('parseGitRemoteUrl', () => {
   test('parses SSH colon format', () => {
@@ -45,5 +47,30 @@ describe('parseGitRemoteUrl', () => {
 
   test('returns null for malformed URL', () => {
     expect(parseGitRemoteUrl('not-a-url')).toBeNull();
+  });
+});
+
+describe('detectGitRemote', () => {
+  test('detects remote for a real git repo (this repo)', async () => {
+    const result = await detectGitRemote(process.cwd());
+    expect(result).not.toBeNull();
+    expect(result).toContain('/');
+  });
+
+  test('returns null for non-git directory', async () => {
+    const tempDir = await import('fs/promises').then(fs =>
+      fs.mkdtemp(path.join(os.tmpdir(), 'git-test-'))
+    );
+    try {
+      const result = await detectGitRemote(tempDir);
+      expect(result).toBeNull();
+    } finally {
+      await import('fs/promises').then(fs => fs.rm(tempDir, { recursive: true, force: true }));
+    }
+  });
+
+  test('returns null for nonexistent directory', async () => {
+    const result = await detectGitRemote('/nonexistent/path/that/does/not/exist');
+    expect(result).toBeNull();
   });
 });
