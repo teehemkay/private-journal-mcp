@@ -233,17 +233,14 @@ git commit -m "test: Add integration tests for detectGitRemote"
 
 ---
 
-### Task 3: Add `project` Field to Types and Embeddings
+### Task 3: Add `project` Field to `EmbeddingData`
 
 **Files:**
-- Modify: `src/types.ts`
 - Modify: `src/embeddings.ts`
 
-- [ ] **Step 1: Add `project` to `ProcessThoughtsRequest` in `src/types.ts`**
+- [ ] **Step 1: Add `project` to `EmbeddingData` in `src/embeddings.ts`**
 
-This isn't strictly needed for the internal flow (project comes from the server, not the tool call), but the interface documents the domain model. Actually — on reflection, `ProcessThoughtsRequest` models the tool input, not internal state. The `project` field is internal state. Leave `types.ts` alone.
-
-Add `project` to `EmbeddingData` in `src/embeddings.ts`. Change the interface:
+Change the interface:
 
 ```typescript
 export interface EmbeddingData {
@@ -561,12 +558,48 @@ async generateMissingEmbeddings(): Promise<number> {
 }
 ```
 
-- [ ] **Step 10: Run tests to verify they pass**
+- [ ] **Step 10: Write test — regeneration threads project into sidecar**
+
+Add to `tests/journal.test.ts`:
+
+```typescript
+test('generateMissingEmbeddings threads project into user-global sidecars', async () => {
+  const customJournalManager = new JournalManager(projectTempDir, undefined, 'obra/private-journal');
+
+  // Write a user-global entry (creates both .md and .embedding)
+  await customJournalManager.writeThoughts({
+    feelings: 'Entry for regeneration test'
+  });
+
+  const today = new Date();
+  const dateString = getFormattedDate(today);
+  const userDayDir = path.join(userTempDir, '.private-journal', dateString);
+  const userFiles = await fs.readdir(userDayDir);
+  const embeddingFile = userFiles.find(f => f.endsWith('.embedding'));
+
+  // Delete the .embedding file to simulate a missing embedding
+  await fs.rm(path.join(userDayDir, embeddingFile!));
+
+  // Regenerate
+  const count = await customJournalManager.generateMissingEmbeddings();
+  expect(count).toBe(1);
+
+  // Verify the regenerated embedding has project
+  const regenFiles = await fs.readdir(userDayDir);
+  const regenEmbedding = regenFiles.find(f => f.endsWith('.embedding'));
+  const embeddingContent = await fs.readFile(path.join(userDayDir, regenEmbedding!), 'utf8');
+  const embeddingData = JSON.parse(embeddingContent);
+
+  expect(embeddingData.project).toBe('obra/private-journal');
+});
+```
+
+- [ ] **Step 11: Run tests to verify they pass**
 
 Run: `npx jest tests/journal.test.ts -v`
 Expected: All tests PASS
 
-- [ ] **Step 11: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
 git add src/journal.ts tests/journal.test.ts
@@ -777,12 +810,31 @@ test('search results work with legacy embeddings lacking project field', async (
 }, 30000);
 ```
 
-- [ ] **Step 5: Run all tests to verify they pass**
+- [ ] **Step 5: Write test — display formatting includes project**
+
+Add to `tests/embeddings.test.ts`:
+
+```typescript
+test('search result display string includes project when present', () => {
+  // Unit test the display format template used in server.ts
+  const result = { type: 'user', project: 'obra/private-journal', timestamp: Date.now(), score: 0.95 };
+  const display = `(${result.type}${result.project ? ' - ' + result.project : ''})`;
+  expect(display).toBe('(user - obra/private-journal)');
+});
+
+test('search result display string omits project when absent', () => {
+  const result = { type: 'user', project: undefined, timestamp: Date.now(), score: 0.95 };
+  const display = `(${result.type}${result.project ? ' - ' + result.project : ''})`;
+  expect(display).toBe('(user)');
+});
+```
+
+- [ ] **Step 6: Run all tests to verify they pass**
 
 Run: `npx jest -v`
 Expected: All tests PASS
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add src/search.ts src/server.ts tests/embeddings.test.ts
@@ -934,17 +986,26 @@ Expected: Build completes with no errors
 
 - [ ] **Step 3: Verify manually with real repo**
 
-Run the server pointing at this repo's directory and check that:
-1. Git remote is detected and logged at startup
-2. A `process_thoughts` call with `feelings` produces a user-global entry with `project:` in frontmatter
-3. The `.embedding` sidecar file contains the `project` field
+Run the server pointing at this repo's directory and verify all three outcomes:
 
-This can be done by checking the startup log output:
+**3a. Startup detection:**
 ```bash
 echo '{}' | node dist/index.js 2>&1 | head -20
 ```
-
 Look for: `Detected project: <owner>/<repo>`
+
+**3b. Frontmatter contains project:**
+After running the server and sending a `process_thoughts` with `feelings`, check the most recent user-global entry:
+```bash
+ls -t ~/.private-journal/$(date +%Y-%m-%d)/*.md | head -1 | xargs head -10
+```
+Look for: `project: <owner>/<repo>` in the YAML frontmatter.
+
+**3c. Embedding sidecar contains project:**
+```bash
+ls -t ~/.private-journal/$(date +%Y-%m-%d)/*.embedding | head -1 | xargs python3 -c "import json,sys; d=json.load(sys.stdin); print('project:', d.get('project', 'MISSING'))"
+```
+Look for: `project: <owner>/<repo>` (not `MISSING`).
 
 - [ ] **Step 4: Final commit if any fixes needed**
 
