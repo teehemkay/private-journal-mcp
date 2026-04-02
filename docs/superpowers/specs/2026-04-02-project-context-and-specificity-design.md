@@ -21,11 +21,13 @@ async function detectGitRemote(directory: string): Promise<string | null>
 
 Behavior:
 - Runs `git remote get-url origin` in the given directory using `child_process`
-- Parses the result into `owner/repo` form, handling all common URL formats:
+- Parses the result into a normalized path identifier (everything after the host), handling all common URL formats:
   - SSH colon format: `git@github.com:obra/private-journal.git` -> `obra/private-journal`
   - SSH URL format: `ssh://git@github.com/obra/private-journal.git` -> `obra/private-journal`
+  - SSH URL with port: `ssh://git@gitlab.example.com:2222/obra/private-journal.git` -> `obra/private-journal`
   - HTTPS format: `https://github.com/obra/private-journal.git` -> `obra/private-journal`
-  - Strips trailing `.git`
+  - Nested namespaces (GitLab): `git@gitlab.com:org/team/repo.git` -> `org/team/repo`
+  - Strips trailing `.git` and leading `/`
   - Host-agnostic: works with GitHub, GitLab, Bitbucket, self-hosted instances, etc.
 - Returns `null` if: not a git repo, no remote configured, `git` binary not found, or command fails
 - Never throws — all failures produce `null`
