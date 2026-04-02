@@ -79,3 +79,7 @@ The server provides comprehensive journaling and search capabilities through the
 - Temporary directories created/cleaned for each test to ensure isolation
 - Coverage tracking for core functionality (`src/journal.ts`, `src/types.ts`, `src/paths.ts`, `src/embeddings.ts`, `src/search.ts`)
 - Comprehensive embedding and search test suite with proper mocking for CI/CD environments
+
+## Journal Entry Guidelines
+
+Every journal entry must be self-contained — a future reader with no conversation context should understand what you're referring to. Name the specific task, file, conversation, decision, or event. Never use unanchored references like "this", "the session", or "what happened".
