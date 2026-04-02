@@ -9,6 +9,7 @@ A comprehensive MCP (Model Context Protocol) server that provides Claude with pr
 - **Dual storage**: Project notes stay with projects, personal thoughts in user home directory
 - **Timestamped entries**: Each entry automatically dated with microsecond precision
 - **YAML frontmatter**: Structured metadata for each entry
+- **Project context**: Non-project entries automatically tagged with git remote origin (owner/repo) for traceability
 
 ### Search & Discovery
 - **Semantic search**: Natural language queries using local AI embeddings
@@ -105,6 +106,7 @@ Each markdown file contains YAML frontmatter and structured sections:
 title: "2:30:45 PM - May 31, 2025"
 date: 2025-05-31T14:30:45.123Z
 timestamp: 1717160645123
+project: obra/private-journal
 ---
 
 ## Feelings
@@ -115,6 +117,8 @@ I'm excited about this new search feature...
 
 Vector embeddings provide semantic understanding...
 ```
+
+Note: The `project` field appears only in user-global entries (~/.private-journal/). Project-local entries omit it since their location provides context.
 
 ## Development
 
