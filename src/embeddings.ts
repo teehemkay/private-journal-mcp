@@ -11,6 +11,7 @@ export interface EmbeddingData {
   sections: string[];
   timestamp: number;
   path: string;
+  project?: string;
 }
 
 export class EmbeddingService {
