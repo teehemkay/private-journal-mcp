@@ -292,6 +292,132 @@ describe('JournalManager', () => {
     await expect(fs.access(userDayDir)).rejects.toThrow();
   });
 
+  test('includes project in user-global entry frontmatter when provided', async () => {
+    const customJournalManager = new JournalManager(projectTempDir, undefined, 'obra/private-journal');
+    const thoughts = {
+      feelings: 'Excited about project context feature'
+    };
+
+    await customJournalManager.writeThoughts(thoughts);
+
+    const today = new Date();
+    const dateString = getFormattedDate(today);
+    const userDayDir = path.join(userTempDir, '.private-journal', dateString);
+
+    const userFiles = await fs.readdir(userDayDir);
+    const mdFile = userFiles.find(f => f.endsWith('.md'));
+    const userContent = await fs.readFile(path.join(userDayDir, mdFile!), 'utf8');
+
+    expect(userContent).toContain('project: obra/private-journal');
+  });
+
+  test('does not include project in project-local entry frontmatter', async () => {
+    const customJournalManager = new JournalManager(projectTempDir, undefined, 'obra/private-journal');
+    const thoughts = {
+      project_notes: 'Architecture looks solid'
+    };
+
+    await customJournalManager.writeThoughts(thoughts);
+
+    const today = new Date();
+    const dateString = getFormattedDate(today);
+    const projectDayDir = path.join(projectTempDir, dateString);
+
+    const projectFiles = await fs.readdir(projectDayDir);
+    const mdFile = projectFiles.find(f => f.endsWith('.md'));
+    const projectContent = await fs.readFile(path.join(projectDayDir, mdFile!), 'utf8');
+
+    expect(projectContent).not.toContain('project:');
+  });
+
+  test('omits project from frontmatter when not provided', async () => {
+    const thoughts = {
+      feelings: 'Testing without project context'
+    };
+
+    await journalManager.writeThoughts(thoughts);
+
+    const today = new Date();
+    const dateString = getFormattedDate(today);
+    const userDayDir = path.join(userTempDir, '.private-journal', dateString);
+
+    const userFiles = await fs.readdir(userDayDir);
+    const mdFile = userFiles.find(f => f.endsWith('.md'));
+    const userContent = await fs.readFile(path.join(userDayDir, mdFile!), 'utf8');
+
+    expect(userContent).not.toContain('project:');
+  });
+
+  test('includes project in user-global embedding sidecar when provided', async () => {
+    const customJournalManager = new JournalManager(projectTempDir, undefined, 'obra/private-journal');
+    const thoughts = {
+      feelings: 'Testing embedding sidecar project field'
+    };
+
+    await customJournalManager.writeThoughts(thoughts);
+
+    const today = new Date();
+    const dateString = getFormattedDate(today);
+    const userDayDir = path.join(userTempDir, '.private-journal', dateString);
+
+    const userFiles = await fs.readdir(userDayDir);
+    const embeddingFile = userFiles.find(f => f.endsWith('.embedding'));
+    expect(embeddingFile).toBeDefined();
+
+    const embeddingContent = await fs.readFile(path.join(userDayDir, embeddingFile!), 'utf8');
+    const embeddingData = JSON.parse(embeddingContent);
+
+    expect(embeddingData.project).toBe('obra/private-journal');
+  });
+
+  test('omits project from project-local embedding sidecar', async () => {
+    const customJournalManager = new JournalManager(projectTempDir, undefined, 'obra/private-journal');
+    const thoughts = {
+      project_notes: 'Testing project-local embedding'
+    };
+
+    await customJournalManager.writeThoughts(thoughts);
+
+    const today = new Date();
+    const dateString = getFormattedDate(today);
+    const projectDayDir = path.join(projectTempDir, dateString);
+
+    const projectFiles = await fs.readdir(projectDayDir);
+    const embeddingFile = projectFiles.find(f => f.endsWith('.embedding'));
+    expect(embeddingFile).toBeDefined();
+
+    const embeddingContent = await fs.readFile(path.join(projectDayDir, embeddingFile!), 'utf8');
+    const embeddingData = JSON.parse(embeddingContent);
+
+    expect(embeddingData.project).toBeUndefined();
+  });
+
+  test('generateMissingEmbeddings threads project into user-global sidecars', async () => {
+    const customJournalManager = new JournalManager(projectTempDir, undefined, 'obra/private-journal');
+
+    await customJournalManager.writeThoughts({
+      feelings: 'Entry for regeneration test'
+    });
+
+    const today = new Date();
+    const dateString = getFormattedDate(today);
+    const userDayDir = path.join(userTempDir, '.private-journal', dateString);
+    const userFiles = await fs.readdir(userDayDir);
+    const embeddingFile = userFiles.find(f => f.endsWith('.embedding'));
+
+    await fs.rm(path.join(userDayDir, embeddingFile!));
+
+    const count = await customJournalManager.generateMissingEmbeddings();
+    expect(count).toBe(1);
+
+    const regenFiles = await fs.readdir(userDayDir);
+    const regenEmbedding = regenFiles.find(f => f.endsWith('.embedding'));
+    const embeddingContent = await fs.readFile(path.join(userDayDir, regenEmbedding!), 'utf8');
+    const embeddingData = JSON.parse(embeddingContent);
+
+    expect(embeddingData.project).toBe('obra/private-journal');
+  });
+
   test('uses explicit user journal path when provided', async () => {
     const customUserDir = await fs.mkdtemp(path.join(os.tmpdir(), 'custom-user-'));
     const customJournalManager = new JournalManager(projectTempDir, customUserDir);

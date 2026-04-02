@@ -10,11 +10,13 @@ import { EmbeddingService, EmbeddingData } from './embeddings';
 export class JournalManager {
   private projectJournalPath: string;
   private userJournalPath: string;
+  private project: string | null;
   private embeddingService: EmbeddingService;
 
-  constructor(projectJournalPath: string, userJournalPath?: string) {
+  constructor(projectJournalPath: string, userJournalPath?: string, project?: string) {
     this.projectJournalPath = projectJournalPath;
     this.userJournalPath = userJournalPath || resolveUserJournalPath();
+    this.project = project || null;
     this.embeddingService = EmbeddingService.getInstance();
   }
 
@@ -56,13 +58,13 @@ export class JournalManager {
     
     // Write project notes to project directory
     if (projectThoughts.project_notes) {
-      await this.writeThoughtsToLocation(projectThoughts, timestamp, this.projectJournalPath);
+      await this.writeThoughtsToLocation(projectThoughts, timestamp, this.projectJournalPath, false);
     }
-    
+
     // Write user thoughts to user directory
     const hasUserContent = Object.values(userThoughts).some(value => value !== undefined);
     if (hasUserContent) {
-      await this.writeThoughtsToLocation(userThoughts, timestamp, this.userJournalPath);
+      await this.writeThoughtsToLocation(userThoughts, timestamp, this.userJournalPath, true);
     }
   }
 
@@ -113,22 +115,23 @@ ${content}
       world_knowledge?: string;
     },
     timestamp: Date,
-    basePath: string
+    basePath: string,
+    isUserGlobal: boolean = false
   ): Promise<void> {
     const dateString = this.formatDate(timestamp);
     const timeString = this.formatTimestamp(timestamp);
-    
+
     const dayDirectory = path.join(basePath, dateString);
     const fileName = `${timeString}.md`;
     const filePath = path.join(dayDirectory, fileName);
 
     await this.ensureDirectoryExists(dayDirectory);
-    
-    const formattedEntry = this.formatThoughts(thoughts, timestamp);
+
+    const formattedEntry = this.formatThoughts(thoughts, timestamp, isUserGlobal);
     await fs.writeFile(filePath, formattedEntry, 'utf8');
 
     // Generate and save embedding
-    await this.generateEmbeddingForEntry(filePath, formattedEntry, timestamp);
+    await this.generateEmbeddingForEntry(filePath, formattedEntry, timestamp, isUserGlobal ? this.project : null);
   }
 
   private formatThoughts(thoughts: {
@@ -137,7 +140,7 @@ ${content}
     user_context?: string;
     technical_insights?: string;
     world_knowledge?: string;
-  }, timestamp: Date): string {
+  }, timestamp: Date, isUserGlobal: boolean = false): string {
     const timeDisplay = timestamp.toLocaleTimeString('en-US', { 
       hour12: true, 
       hour: 'numeric', 
@@ -172,10 +175,12 @@ ${content}
       sections.push(`## World Knowledge\n\n${thoughts.world_knowledge}`);
     }
 
+    const projectLine = (isUserGlobal && this.project) ? `\nproject: ${this.project}` : '';
+
     return `---
 title: "${timeDisplay} - ${dateDisplay}"
 date: ${timestamp.toISOString()}
-timestamp: ${timestamp.getTime()}
+timestamp: ${timestamp.getTime()}${projectLine}
 ---
 
 ${sections.join('\n\n')}
@@ -185,7 +190,8 @@ ${sections.join('\n\n')}
   private async generateEmbeddingForEntry(
     filePath: string,
     content: string,
-    timestamp: Date
+    timestamp: Date,
+    project: string | null = null
   ): Promise<void> {
     try {
       const { text, sections } = this.embeddingService.extractSearchableText(content);
@@ -201,7 +207,8 @@ ${sections.join('\n\n')}
         text,
         sections,
         timestamp: timestamp.getTime(),
-        path: filePath
+        path: filePath,
+        ...(project ? { project } : {}),
       };
 
       await this.embeddingService.saveEmbedding(filePath, embeddingData);
@@ -213,16 +220,19 @@ ${sections.join('\n\n')}
 
   async generateMissingEmbeddings(): Promise<number> {
     let count = 0;
-    const paths = [this.projectJournalPath, this.userJournalPath];
-    
-    for (const basePath of paths) {
+    const paths: Array<{ basePath: string; isUserGlobal: boolean }> = [
+      { basePath: this.projectJournalPath, isUserGlobal: false },
+      { basePath: this.userJournalPath, isUserGlobal: true },
+    ];
+
+    for (const { basePath, isUserGlobal } of paths) {
       try {
         const dayDirs = await fs.readdir(basePath);
-        
+
         for (const dayDir of dayDirs) {
           const dayPath = path.join(basePath, dayDir);
           const stat = await fs.stat(dayPath);
-          
+
           if (!stat.isDirectory() || !dayDir.match(/^\d{4}-\d{2}-\d{2}$/)) {
             continue;
           }
@@ -233,7 +243,7 @@ ${sections.join('\n\n')}
           for (const mdFile of mdFiles) {
             const mdPath = path.join(dayPath, mdFile);
             const embeddingPath = mdPath.replace(/\.md$/, '.embedding');
-            
+
             try {
               await fs.access(embeddingPath);
               // Embedding already exists, skip
@@ -242,7 +252,7 @@ ${sections.join('\n\n')}
               console.error(`Generating missing embedding for ${mdPath}`);
               const content = await fs.readFile(mdPath, 'utf8');
               const timestamp = this.extractTimestampFromPath(mdPath) || new Date();
-              await this.generateEmbeddingForEntry(mdPath, content, timestamp);
+              await this.generateEmbeddingForEntry(mdPath, content, timestamp, isUserGlobal ? this.project : null);
               count++;
             }
           }
@@ -253,7 +263,7 @@ ${sections.join('\n\n')}
         }
       }
     }
-    
+
     return count;
   }
 
