@@ -18,12 +18,12 @@
 |------|---------------|
 | `src/git.ts` (new) | Git remote detection and URL parsing |
 | `tests/git.test.ts` (new) | Tests for git remote detection |
-| `src/types.ts` | Add `project` field to interfaces |
 | `src/embeddings.ts` | Add `project` field to `EmbeddingData` |
 | `src/journal.ts` | Accept and write `project` to frontmatter for user-global entries |
 | `src/server.ts` | Startup integration + tool description updates |
 | `src/search.ts` | Surface `project` in search/list results |
 | `CLAUDE.md` | Journal specificity guidance |
+| `README.md` | Update architecture/features docs |
 
 ---
 
@@ -466,12 +466,107 @@ private async generateEmbeddingForEntry(
 }
 ```
 
-- [ ] **Step 8: Run tests to verify they pass**
+- [ ] **Step 8: Write test — project in user-global `.embedding` sidecar**
+
+Add to `tests/journal.test.ts`:
+
+```typescript
+test('includes project in user-global embedding sidecar when provided', async () => {
+  const customJournalManager = new JournalManager(projectTempDir, undefined, 'obra/private-journal');
+  const thoughts = {
+    feelings: 'Testing embedding sidecar project field'
+  };
+
+  await customJournalManager.writeThoughts(thoughts);
+
+  const today = new Date();
+  const dateString = getFormattedDate(today);
+  const userDayDir = path.join(userTempDir, '.private-journal', dateString);
+
+  const userFiles = await fs.readdir(userDayDir);
+  const embeddingFile = userFiles.find(f => f.endsWith('.embedding'));
+  expect(embeddingFile).toBeDefined();
+
+  const embeddingContent = await fs.readFile(path.join(userDayDir, embeddingFile!), 'utf8');
+  const embeddingData = JSON.parse(embeddingContent);
+
+  expect(embeddingData.project).toBe('obra/private-journal');
+});
+
+test('omits project from project-local embedding sidecar', async () => {
+  const customJournalManager = new JournalManager(projectTempDir, undefined, 'obra/private-journal');
+  const thoughts = {
+    project_notes: 'Testing project-local embedding'
+  };
+
+  await customJournalManager.writeThoughts(thoughts);
+
+  const today = new Date();
+  const dateString = getFormattedDate(today);
+  const projectDayDir = path.join(projectTempDir, dateString);
+
+  const projectFiles = await fs.readdir(projectDayDir);
+  const embeddingFile = projectFiles.find(f => f.endsWith('.embedding'));
+  expect(embeddingFile).toBeDefined();
+
+  const embeddingContent = await fs.readFile(path.join(projectDayDir, embeddingFile!), 'utf8');
+  const embeddingData = JSON.parse(embeddingContent);
+
+  expect(embeddingData.project).toBeUndefined();
+});
+```
+
+- [ ] **Step 9: Update `generateMissingEmbeddings` to thread project**
+
+In `src/journal.ts`, update the `generateMissingEmbeddings` method. When regenerating embeddings for user-global entries, pass `this.project`:
+
+```typescript
+async generateMissingEmbeddings(): Promise<number> {
+  let count = 0;
+  const paths: Array<{ basePath: string; isUserGlobal: boolean }> = [
+    { basePath: this.projectJournalPath, isUserGlobal: false },
+    { basePath: this.userJournalPath, isUserGlobal: true },
+  ];
+  
+  for (const { basePath, isUserGlobal } of paths) {
+    try {
+      const dayDirs = await fs.readdir(basePath);
+      
+      for (const dayDir of dayDirs) {
+        // ... existing directory traversal code ...
+
+        for (const mdFile of mdFiles) {
+          const mdPath = path.join(dayPath, mdFile);
+          const embeddingPath = mdPath.replace(/\.md$/, '.embedding');
+          
+          try {
+            await fs.access(embeddingPath);
+          } catch {
+            console.error(`Generating missing embedding for ${mdPath}`);
+            const content = await fs.readFile(mdPath, 'utf8');
+            const timestamp = this.extractTimestampFromPath(mdPath) || new Date();
+            await this.generateEmbeddingForEntry(mdPath, content, timestamp, isUserGlobal ? this.project : null);
+            count++;
+          }
+        }
+      }
+    } catch (error) {
+      if ((error as any)?.code !== 'ENOENT') {
+        console.error(`Failed to scan ${basePath} for missing embeddings:`, error);
+      }
+    }
+  }
+  
+  return count;
+}
+```
+
+- [ ] **Step 10: Run tests to verify they pass**
 
 Run: `npx jest tests/journal.test.ts -v`
 Expected: All tests PASS
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
 git add src/journal.ts tests/journal.test.ts
@@ -526,8 +621,14 @@ async run(): Promise<void> {
   try {
     const projectRoot = this.journalPath.replace(/[\/\\]\.private-journal$/, '');
     // Only detect if the journal path looks like a project path (not home dir or temp)
-    const homePath = process.env.HOME || process.env.USERPROFILE || '';
-    const isProjectPath = projectRoot !== homePath && !projectRoot.startsWith('/tmp');
+    const nonProjectRoots = [
+      process.env.HOME,
+      process.env.USERPROFILE,
+      '/tmp',
+      process.env.TEMP,
+      process.env.TMP,
+    ].filter(Boolean);
+    const isProjectPath = !nonProjectRoots.includes(projectRoot);
     
     if (isProjectPath) {
       this.project = await detectGitRemote(projectRoot);
@@ -641,15 +742,50 @@ To:
 `${i + 1}. ${new Date(result.timestamp).toLocaleDateString()} (${result.type}${result.project ? ' - ' + result.project : ''})\n`
 ```
 
-- [ ] **Step 4: Run all tests to verify nothing breaks**
+- [ ] **Step 4: Write test — project surfaces in search results**
+
+Add to `tests/embeddings.test.ts`:
+
+```typescript
+test('search results include project field from embedding sidecar', async () => {
+  const customJournalManager = new JournalManager(projectTempDir, undefined, 'obra/private-journal');
+  
+  await customJournalManager.writeThoughts({
+    feelings: 'Testing project in search results'
+  });
+
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  const results = await searchService.search('testing project search', { type: 'user' });
+  
+  expect(results.length).toBeGreaterThan(0);
+  expect(results[0].project).toBe('obra/private-journal');
+}, 30000);
+
+test('search results work with legacy embeddings lacking project field', async () => {
+  // Write an entry without project context (simulates legacy embedding)
+  await journalManager.writeThoughts({
+    feelings: 'Legacy entry without project context'
+  });
+
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  const results = await searchService.search('legacy entry', { type: 'user' });
+  
+  expect(results.length).toBeGreaterThan(0);
+  expect(results[0].project).toBeUndefined();
+}, 30000);
+```
+
+- [ ] **Step 5: Run all tests to verify they pass**
 
 Run: `npx jest -v`
 Expected: All tests PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/search.ts src/server.ts
+git add src/search.ts src/server.ts tests/embeddings.test.ts
 git commit -m "feat: Surface project context in search and list results"
 ```
 
@@ -731,7 +867,57 @@ git commit -m "docs: Add journal entry specificity guidance to CLAUDE.md"
 
 ---
 
-### Task 9: Full Integration Verification
+### Task 9: README Update
+
+**Files:**
+- Modify: `README.md`
+
+- [ ] **Step 1: Add project context to Features section**
+
+In `README.md`, add to the Journaling features list (after "YAML frontmatter" bullet):
+
+```markdown
+- **Project context**: Non-project entries automatically tagged with git remote origin (owner/repo) for traceability
+```
+
+- [ ] **Step 2: Update Entry Format example**
+
+In the "Entry Format" section, update the User Journal example to show the `project` field in frontmatter:
+
+```markdown
+### Entry Format
+Each markdown file contains YAML frontmatter and structured sections:
+
+```markdown
+---
+title: "2:30:45 PM - May 31, 2025"
+date: 2025-05-31T14:30:45.123Z
+timestamp: 1717160645123
+project: obra/private-journal
+---
+
+## Feelings
+
+I'm excited about this new search feature...
+
+## Technical Insights
+
+Vector embeddings provide semantic understanding...
+```
+
+Note: The `project` field appears only in user-global entries (~/.private-journal/). Project-local entries omit it since their location provides context.
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add README.md
+git commit -m "docs: Update README with project context feature"
+```
+
+---
+
+### Task 10: Full Integration Verification
 
 **Files:**
 - None (verification only)
