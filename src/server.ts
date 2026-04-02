@@ -10,15 +10,19 @@ import {
 import { JournalManager } from './journal';
 import { ProcessFeelingsRequest, ProcessThoughtsRequest } from './types';
 import { SearchService } from './search';
+import { detectGitRemote } from './git';
 
 export class PrivateJournalServer {
   private server: Server;
   private journalManager: JournalManager;
   private searchService: SearchService;
+  private journalPath: string;
+  private project: string | null = null;
 
   constructor(journalPath: string) {
     this.journalManager = new JournalManager(journalPath);
     this.searchService = new SearchService(journalPath);
+    this.journalPath = journalPath;
     this.server = new Server(
       {
         name: 'private-journal-mcp',
@@ -289,6 +293,32 @@ export class PrivateJournalServer {
   }
 
   async run(): Promise<void> {
+    // Detect project context from git remote
+    try {
+      const projectRoot = this.journalPath.replace(/[\/\\]\.private-journal$/, '');
+      // Only detect if the journal path looks like a project path (not home dir or temp)
+      const nonProjectRoots = [
+        process.env.HOME,
+        process.env.USERPROFILE,
+        '/tmp',
+        process.env.TEMP,
+        process.env.TMP,
+      ].filter(Boolean);
+      const isProjectPath = !nonProjectRoots.includes(projectRoot);
+
+      if (isProjectPath) {
+        this.project = await detectGitRemote(projectRoot);
+        if (this.project) {
+          console.error(`Detected project: ${this.project}`);
+          // Recreate JournalManager with project context
+          this.journalManager = new JournalManager(this.journalPath, undefined, this.project);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to detect git remote:', error);
+      // Non-fatal — continue without project context
+    }
+
     // Generate missing embeddings on startup
     try {
       console.error('Checking for missing embeddings...');
