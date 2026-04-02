@@ -21,16 +21,21 @@ async function detectGitRemote(directory: string): Promise<string | null>
 
 Behavior:
 - Runs `git remote get-url origin` in the given directory using `child_process`
-- Parses the result into `owner/repo` form:
-  - SSH format: `git@github.com:obra/private-journal.git` -> `obra/private-journal`
+- Parses the result into `owner/repo` form, handling all common URL formats:
+  - SSH colon format: `git@github.com:obra/private-journal.git` -> `obra/private-journal`
+  - SSH URL format: `ssh://git@github.com/obra/private-journal.git` -> `obra/private-journal`
   - HTTPS format: `https://github.com/obra/private-journal.git` -> `obra/private-journal`
   - Strips trailing `.git`
-- Returns `null` if: not a git repo, no remote configured, or command fails
+  - Host-agnostic: works with GitHub, GitLab, Bitbucket, self-hosted instances, etc.
+- Returns `null` if: not a git repo, no remote configured, `git` binary not found, or command fails
 - Never throws — all failures produce `null`
+- Only `origin` remote is checked (most common convention)
 
 ### 2. Server Startup Integration
 
 `PrivateJournalServer` calls `detectGitRemote` once during startup (in `run()`, before connecting the transport). The project root is derived from `journalPath` by stripping the `.private-journal` suffix.
+
+**Guard:** Git detection only runs when the resolved journal path is a project-local path (i.e., inside a project directory, not the home directory or temp fallback). If `journalPath` resolved to `~/.private-journal` or a temp path, there's no meaningful project root to detect from.
 
 The detected project identifier is passed to `JournalManager` as an optional constructor parameter.
 
@@ -56,6 +61,10 @@ The `project` value is also passed to `generateEmbeddingForEntry` so it can be s
 ### 4. Embedding Data Changes
 
 `EmbeddingData` in `src/embeddings.ts` gains an optional `project?: string` field. This is populated when generating embeddings for user-global entries, so that search results can surface the project context without re-reading the markdown file.
+
+The `project` value is **sidecar metadata only** — it is not prepended to the text being embedded. Semantic search relevance for project-related queries is a secondary concern; the primary goal is surfacing project context in results. If semantic project-matching proves important later, embedding the project name into the text is a straightforward follow-up.
+
+Existing `.embedding` files without a `project` field continue to work — search results from them simply won't show project context.
 
 ### 5. Search & Display Changes
 
