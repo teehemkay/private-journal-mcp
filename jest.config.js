@@ -9,6 +9,7 @@ module.exports = {
     'src/paths.ts',
     'src/embeddings.ts',
     'src/search.ts',
+    'src/git.ts',
     '!src/**/*.d.ts',
   ],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
