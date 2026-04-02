@@ -212,7 +212,7 @@ export class PrivateJournalServer {
                 type: 'text',
                 text: results.length > 0 
                   ? `Found ${results.length} relevant entries:\n\n${results.map((result, i) => 
-                      `${i + 1}. [Score: ${result.score.toFixed(3)}] ${new Date(result.timestamp).toLocaleDateString()} (${result.type})\n` +
+                      `${i + 1}. [Score: ${result.score.toFixed(3)}] ${new Date(result.timestamp).toLocaleDateString()} (${result.type}${result.project ? ' - ' + result.project : ''})\n` +
                       `   Sections: ${result.sections.join(', ')}\n` +
                       `   Path: ${result.path}\n` +
                       `   Excerpt: ${result.excerpt}\n`
@@ -273,7 +273,7 @@ export class PrivateJournalServer {
                 type: 'text',
                 text: results.length > 0 
                   ? `Recent entries (last ${days} days):\n\n${results.map((result, i) => 
-                      `${i + 1}. ${new Date(result.timestamp).toLocaleDateString()} (${result.type})\n` +
+                      `${i + 1}. ${new Date(result.timestamp).toLocaleDateString()} (${result.type}${result.project ? ' - ' + result.project : ''})\n` +
                       `   Sections: ${result.sections.join(', ')}\n` +
                       `   Path: ${result.path}\n` +
                       `   Excerpt: ${result.excerpt}\n`

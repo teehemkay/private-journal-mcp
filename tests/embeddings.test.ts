@@ -154,6 +154,46 @@ TypeScript interfaces are really powerful for maintaining code quality.`;
     expect(topResult.score).toBeGreaterThan(0.1);
   }, 90000);
 
+  test('search results include project field from embedding sidecar', async () => {
+    const customJournalManager = new JournalManager(projectTempDir, undefined, 'obra/private-journal');
+
+    await customJournalManager.writeThoughts({
+      feelings: 'Testing project in search results'
+    });
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    const results = await searchService.search('testing project search', { type: 'user' });
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].project).toBe('obra/private-journal');
+  }, 30000);
+
+  test('search results work with legacy embeddings lacking project field', async () => {
+    await journalManager.writeThoughts({
+      feelings: 'Legacy entry without project context'
+    });
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    const results = await searchService.search('legacy entry', { type: 'user' });
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].project).toBeUndefined();
+  }, 30000);
+
+  test('search result display string includes project when present', () => {
+    const result = { type: 'user', project: 'obra/private-journal', timestamp: Date.now(), score: 0.95 };
+    const display = `(${result.type}${result.project ? ' - ' + result.project : ''})`;
+    expect(display).toBe('(user - obra/private-journal)');
+  });
+
+  test('search result display string omits project when absent', () => {
+    const result = { type: 'user', project: undefined, timestamp: Date.now(), score: 0.95 };
+    const display = `(${result.type}${result.project ? ' - ' + result.project : ''})`;
+    expect(display).toBe('(user)');
+  });
+
   test('search service can filter by entry type', async () => {
     // Add project and user entries
     await journalManager.writeThoughts({

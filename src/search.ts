@@ -14,6 +14,7 @@ export interface SearchResult {
   timestamp: number;
   excerpt: string;
   type: 'project' | 'user';
+  project?: string;
 }
 
 export interface SearchOptions {
@@ -98,7 +99,8 @@ export class SearchService {
           sections: embedding.sections,
           timestamp: embedding.timestamp,
           excerpt,
-          type: embedding.type
+          type: embedding.type,
+          ...(embedding.project ? { project: embedding.project } : {}),
         };
       })
       .filter(result => result.score >= minScore)
@@ -146,7 +148,8 @@ export class SearchService {
         sections: embedding.sections,
         timestamp: embedding.timestamp,
         excerpt: this.generateExcerpt(embedding.text, '', 150),
-        type: embedding.type
+        type: embedding.type,
+        ...(embedding.project ? { project: embedding.project } : {}),
       }));
 
     return results;
